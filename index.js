@@ -117,11 +117,11 @@ bot.start(async (ctx) => {
 
     ctx.session.isBinance ??= false;
     ctx.session.isBybit ??= false;
-    ctx.session.binanceIdList ??= [];
-    ctx.session.bybitIdList ??= [];
+    ctx.session.firstBinanceAccount ??= null;
+    ctx.session.firstBybitAccount ??= null;
 
     ctx.session.TRC20 = null;
-    ctx.session.contacts = [];
+    ctx.session.email = null;
 
     ctx.replyWithHTML(
       `👋 Welcome, dear ${ctx.from.first_name}!`,
@@ -215,9 +215,9 @@ const userIdHandler = Telegraf.on("text", async (ctx) => {
     await ctx.replyWithHTML(`Okay, yout can fill this data later...`);
   } else {
     if (ctx.session.currentBroker === "Binance") {
-      ctx.session.binanceIdList.push(userMessage);
+      ctx.session.firstBinanceAccount = userMessage;
     } else if (ctx.session.currentBroker === "Bybit") {
-      ctx.session.bybitIdList.push(userMessage);
+      ctx.session.firstBybitAccount = userMessage;
     } else {
       await ctx.replyWithHTML(idNotEntered);
     }
@@ -265,12 +265,10 @@ const userEmailHandler = Telegraf.on("text", async (ctx) => {
       authorizedUser
     );
   } else {
-    ctx.session.contacts.push(userMessage);
+    ctx.session.contacts = userMessage;
 
     await ctx.replyWithHTML(
-      `👍 Great! Now we can contact you <code>${
-        ctx.session.contacts[ctx.session.contacts.length - 1]
-      } </code>`,
+      `👍 Great! Now we can contact you <code>${ctx.session.email} </code>`,
       authorizedUser
     );
   }
@@ -289,10 +287,10 @@ const userEmailHandler = Telegraf.on("text", async (ctx) => {
 
     isBinance: ctx.session.isBinance,
     isBybit: ctx.session.isBybit,
-    binanceIdList: ctx.session.binanceIdList,
-    bybitIdList: ctx.session.bybitIdList,
+    firstBinanceAccount: ctx.session.firstBinanceAccount,
+    firstBybitAccount: ctx.session.firstBybitAccount,
     TRC20: ctx.session.TRC20,
-    contacts: ctx.session.contacts,
+    contacts: ctx.session.email,
   });
 
   return ctx.scene.leave();
@@ -307,12 +305,6 @@ const signingUpScene = new WizardScene(
   userEmailHandler
 );
 
-// const binanceIDChangeScene = new WizardScene(
-//   "binanceIDChangeScene",
-//   newBinanceIdRequest,
-//   newBinanceIdConfirmation
-// );
-
 signingUpScene.enter((ctx) =>
   ctx.replyWithHTML(
     `
@@ -326,7 +318,91 @@ signingUpScene.enter((ctx) =>
 
 const stage = new Stage([signingUpScene]);
 
+// Change TRC20 ADDRESS - DELETE
+const tronLinkWalletChangeHandler = Telegraf.on("text", async (ctx) => {
+  const userMessage = ctx.message.text;
+
+  await client.connect();
+  const userListDB = await client.db().collection("userData");
+  const userToFind =
+    (await userListDB.findOne({
+      telegramChatID: ctx.chat.id,
+    })) || false;
+
+  await userListDB.updateOne(
+    { telegramChatID: ctx.chat.id },
+    {
+      $set: {
+        TRC20: userMessage,
+      },
+    }
+  );
+
+  ctx.replyWithHTML(
+    `Your TrokLink Wallet Address was successfully changed on ${userMessage}`
+  );
+
+  return ctx.scene.leave();
+});
+
+const tronLinkWalletChangeScene = new WizardScene(
+  "tronLinkWalletChangeScene",
+  tronLinkWalletChangeHandler
+);
+
+tronLinkWalletChangeScene.enter((ctx) =>
+  ctx.replyWithHTML(
+    `
+Please, enter new TRC20 adress`
+  )
+);
+
+const stage1 = new Stage([tronLinkWalletChangeScene]);
+
+// CHANGE STATE SCENES : DELETE - РЕШИТЬ ПРОБЛЕМУ НЕСКОЛЬКИХ АККАУНТОВ У ОДНОГО ПОЛЬЗОВАТЕЛЯ
+// const binanceIDChangeScene = new WizardScene(
+//   "binanceIDChangeScene",
+//   newBinanceIdRequestHandler
+// );
+
+// binanceIDChangeScene.enter(async (ctx) => {
+//   await client.connect();
+//   const userListDB = await client.db().collection("userData");
+//   const userToFind =
+//     (await userListDB.findOne({
+//       telegramChatID: ctx.chat.id,
+//     })) || false;
+
+//   if (!userToFind.secondBinanceAccount) {
+//     ctx.replyWithHTML(
+//       `Please, enter new BinanceID
+
+// Where can I find Binance ID`,
+//       {
+//         disable_web_page_preview: true,
+//         ...Markup.keyboard([[`${userToFind.firstBinanceAccount}`]]).resize(),
+//       }
+//     );
+//   }
+
+//   return ctx.scene.leave();
+// });
+
+// const newBinanceIdRequestHandler = Telegraf.on("text", async (ctx) => {
+//   const userMessage = ctx.from.message;
+
+//   await client.connect();
+//   const userListDB = await client.db().collection("userData");
+//   const userToFind =
+//     (await userListDB.findOne({
+//       telegramChatID: ctx.chat.id,
+//     })) || false;
+
+//   ctx.replyWithHTML(``);
+// });
+
 bot.use(stage.middleware());
+bot.use(stage1.middleware());
 
 bot.hears("🔐 Sign up 🔐", (ctx) => {
   ctx.scene.enter("signingUpScene");
@@ -344,19 +420,11 @@ bot.hears("⚙️ Account details ⚙️", async (ctx) => {
     ctx.replyWithHTML(
       `
 Binance ID: ${
-        userToFind.binanceIdList.length > 0
-          ? userToFind.binanceIdList.join(",")
-          : "-"
+        userToFind.firstBinanceAccount ? userToFind.firstBinanceAccount : "-"
       }
-Bybit ID: ${
-        userToFind.bybitIdList.length > 0
-          ? userToFind.bybitIdList.join(",")
-          : "-"
-      }
+Bybit ID: ${userToFind.firstBybitAccount ? userToFind.firstBybitAccount : "-"}
 TronLink Wallet: ${userToFind.TRC20 ? userToFind.TRC20 : "-"} 
-E-mail: ${
-        userToFind.contacts.length > 0 ? userToFind.contacts.join(",") : "-"
-      }    
+E-mail: ${userToFind.contacts ? userToFind.contacts : "-"}    
     `,
       Markup.inlineKeyboard([
         [Markup.button.callback("Change Binance ID", "changeBinance")],
@@ -371,8 +439,8 @@ E-mail: ${
 });
 
 // Buttons handlers
-bot.action("changeBinance", async (ctx) => {
-  await ctx.answerCbQuery();
+bot.action("changeWallet", async (ctx) => {
+  ctx.scene.enter("tronLinkWalletChangeScene");
 });
 
 stage.hears("exit", (ctx) => ctx.scene.leave());
